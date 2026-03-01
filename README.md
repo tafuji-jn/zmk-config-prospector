@@ -57,8 +57,10 @@
 ```conf
 CONFIG_PROSPECTOR_DONGLE_MODE=y
 
-# ターゲットキーボード名（プレフィックス一致、空=最初のHIDデバイス）
-CONFIG_PROSPECTOR_DONGLE_TARGET_NAME="lotom"
+# ターゲットキーボード名（任意、設定しなくてもペアリング画面から接続可能）
+# 設定するとペアリング画面のフィルターとして機能（プレフィックス一致）
+# 空のままだと全てのBLEデバイスがペアリング一覧に表示される
+# CONFIG_PROSPECTOR_DONGLE_TARGET_NAME="lotom"
 
 # 複数キーボード対応
 CONFIG_BT_MAX_PAIRED=3
@@ -71,14 +73,16 @@ CONFIG_PROSPECTOR_DONGLE_MAX_BONDED=3  # UIに表示する最大台数（1-5）
 
 #### 1. BLE デバイス名の設定
 
-ドングルはBLEデバイス名のプレフィックスマッチでキーボードを検出します。キーボードの `.conf` で名前を設定してください：
+キーボードの `.conf` で BLE デバイス名を設定してください。この名前がペアリング画面に表示されます：
 
 ```conf
 # キーボードの .conf ファイル
 CONFIG_ZMK_KEYBOARD_NAME="lotom"
 ```
 
-ドングル側の `CONFIG_PROSPECTOR_DONGLE_TARGET_NAME="lotom"` と一致させてください。プレフィックスマッチなので、`"lotom"` は `"lotom"`, `"lotom_left"`, `"lotom_right"` すべてにマッチします。
+`CONFIG_PROSPECTOR_DONGLE_TARGET_NAME` を設定していない場合（デフォルト）、ペアリング画面には周辺の全てのBLEデバイスが表示されるので、キーボード名で見分けてタップしてください。
+
+`CONFIG_PROSPECTOR_DONGLE_TARGET_NAME` を設定している場合は、そのプレフィックスに一致するデバイスのみ表示されます（例：`"lotom"` は `"lotom"`, `"lotom_left"`, `"lotom_right"` にマッチ）。
 
 #### 2. ペアリング前の settings_reset
 
