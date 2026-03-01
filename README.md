@@ -35,7 +35,8 @@
 8. [Protocol Specification](#-protocol-specification)
 9. [Display Features](#-display-features)
 10. [Keyboard Integration](#keyboard-integration)
-11. [Documentation](#documentation)
+11. [Dongle Mode (USB HID Forwarding)](#dongle-mode-usb-hid-forwarding)
+12. [Documentation](#documentation)
 
 ---
 
@@ -1096,6 +1097,172 @@ CONFIG_PROSPECTOR_DEBUG_WIDGET=y
 ```
 
 Shows technical information overlaid on screen. **Disable for production** (`=n`).
+
+---
+
+## Dongle Mode (USB HID Forwarding)
+
+Prospector can also function as a **BLE-to-USB dongle**: it connects to your ZMK keyboard over BLE as a Central (HID host) and forwards keystrokes to the PC via USB HID. The scanner display continues to work alongside, showing real-time keyboard status via GATT.
+
+### Dongle Mode Architecture
+
+```
+┌─────────────┐  BLE (HID over GATT)  ┌──────────────┐  USB HID  ┌──────┐
+│  Keyboard   │ ──────────────────────→│  Prospector  │──────────→│  PC  │
+│  (ZMK)      │                        │  (Dongle)    │           │      │
+└─────────────┘                        └──────────────┘           └──────┘
+      ↑ BLE Peripheral (HID)           ↑ BLE Central + USB
+      └ Advertises as HID keyboard      └ Display shows status via GATT
+```
+
+### Keyboard-Side Requirements
+
+Your ZMK keyboard needs to be visible as a **BLE HID Peripheral**. The standard ZMK BLE configuration is sufficient — no special shield or module is needed on the keyboard side.
+
+#### 1. Keyboard BLE Name
+
+The dongle discovers keyboards by **BLE device name** (prefix match). Set your keyboard's BLE name in its `.conf`:
+
+```conf
+# Keyboard .conf (e.g., lotom.conf)
+CONFIG_ZMK_KEYBOARD_NAME="lotom"
+```
+
+The dongle's `CONFIG_PROSPECTOR_DONGLE_TARGET_NAME` must match this name as a prefix. For example, `"lotom"` matches `"lotom"`, `"lotom_left"`, `"lotom_right"`.
+
+#### 2. Clear Stale Bonds (First Pairing)
+
+If the keyboard was previously bonded to a different device at the same BLE address (or to an older version of the dongle), the keyboard may reject new connections silently, causing **connection timeouts**.
+
+**Solution**: Perform a **settings reset** on the keyboard before first pairing:
+
+1. Flash the `settings_reset` firmware to your keyboard once:
+   ```
+   # Use the settings_reset UF2 for your board
+   # (available in ZMK's pre-built firmware or build with -DSHIELD=settings_reset)
+   ```
+2. After flashing, re-flash your normal keyboard firmware
+3. The keyboard's bond table is now clear and ready for new pairing
+
+> **When is settings_reset needed?**
+> - First time pairing with a new dongle
+> - After changing the dongle's BLE identity (e.g., full reflash)
+> - When you see repeated `Connection creation timeout` in dongle logs
+>
+> **Not needed for**:
+> - Switching between already-bonded keyboards on the dongle
+> - Normal reconnection after power cycle
+
+#### 3. Prospector Status GATT Service (Optional)
+
+For the dongle to show real-time keyboard status on its display (battery, layer, WPM, etc.), the keyboard must also run the **Prospector Status Advertisement** module. This adds a GATT service that the dongle reads after connecting.
+
+Add to your keyboard's `config/west.yml`:
+
+```yaml
+manifest:
+  remotes:
+    - name: zmkfirmware
+      url-base: https://github.com/zmkfirmware
+    - name: prospector
+      url-base: https://github.com/t-ogura
+
+  projects:
+    - name: zmk
+      remote: zmkfirmware
+      revision: main
+      import: app/west.yml
+
+    - name: prospector-zmk-module
+      remote: prospector
+      revision: v2.1.0
+      path: modules/prospector-zmk-module
+```
+
+Add to your keyboard's `.conf`:
+
+```conf
+CONFIG_ZMK_STATUS_ADVERTISEMENT=y
+CONFIG_ZMK_STATUS_ADV_KEYBOARD_NAME="lotom"
+```
+
+> Without this module, the dongle still works as a USB keyboard — you just won't see status info on the display.
+
+### Dongle-Side Configuration
+
+#### Build Variant
+
+Use the dongle build variant (with or without touch):
+
+| Variant | `artifact-name` | Description |
+|---------|-----------------|-------------|
+| Dongle | `prospector_scanner_dongle` | USB HID forwarding + display |
+| Dongle + Touch | `prospector_scanner_dongle_touch` | + swipe navigation & settings |
+
+#### Dongle Configuration File
+
+`config/prospector_scanner_dongle.conf` contains all dongle-specific settings:
+
+```conf
+# Required
+CONFIG_PROSPECTOR_DONGLE_MODE=y
+
+# Target keyboard name (prefix match, empty = first HID device)
+CONFIG_PROSPECTOR_DONGLE_TARGET_NAME="lotom"
+
+# Multi-keyboard bonding
+CONFIG_BT_MAX_PAIRED=3              # Max BLE bonds
+CONFIG_PROSPECTOR_DONGLE_MAX_BONDED=3  # Max keyboards in UI (range: 1-5)
+```
+
+### Multi-Keyboard Management
+
+The dongle supports bonding with **multiple keyboards** and switching between them via the touch UI.
+
+#### Keyboard Select Screen (Touch Mode)
+
+```
+┌──────────────────────────────────┐
+│ Keyboards                        │  Title
+├──────────────────────────────────┤
+│ ● lotom          [Connected]     │  Bonded keyboard (tap to select)
+│ ○ Corne                          │  Bonded keyboard (tap to switch)
+│                                  │
+│ [+ Add New]                      │  Enter pairing mode
+│                                  │
+│                   ↓ Main         │  Swipe down to return
+└──────────────────────────────────┘
+```
+
+**Operations**:
+- **Tap** a bonded keyboard → switch connection to that keyboard
+- **Long-press** a bonded keyboard → delete confirmation dialog
+- **Tap "+ Add New"** → enter pairing mode (scan for new keyboards)
+
+#### Pairing Mode Screen
+
+```
+┌──────────────────────────────────┐
+│ ← Scanning...                    │  Tap "←" to cancel
+├──────────────────────────────────┤
+│ 🔵 lotom_left        -65dBm     │  Tap to pair
+│ 🔵 lotom_right       -72dBm     │  Tap to pair
+│                                  │
+│   Scanning for keyboards...      │  (shown when no results yet)
+└──────────────────────────────────┘
+```
+
+#### Pairing Procedure
+
+1. Navigate to **Keyboard Select** screen (swipe up from main)
+2. Tap **"+ Add New"**
+3. **On the keyboard**: ensure it is advertising (power on, not connected to another host)
+4. The keyboard should appear in the discovered list within a few seconds
+5. **Tap the keyboard name** to initiate pairing
+6. After successful pairing, the keyboard appears in the bonded list
+7. The dongle remembers bonded keyboards across reboots
+
+> **Tip**: If pairing fails with repeated timeouts, perform a `settings_reset` on the keyboard (see above), then try again.
 
 ---
 
