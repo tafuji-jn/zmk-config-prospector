@@ -111,8 +111,8 @@ manifest:
   remotes:
     - name: zmkfirmware
       url-base: https://github.com/zmkfirmware
-    - name: prospector
-      url-base: https://github.com/t-ogura
+    - name: tafuji-jn
+      url-base: https://github.com/tafuji-jn
 
   projects:
     - name: zmk
@@ -121,8 +121,8 @@ manifest:
       import: app/west.yml
 
     - name: prospector-zmk-module
-      remote: prospector
-      revision: v2.1.0
+      remote: tafuji-jn
+      revision: main
       path: modules/prospector-zmk-module
 ```
 
